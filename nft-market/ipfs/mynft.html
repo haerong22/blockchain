@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <!-- Required meta tags -->
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>NFT - My Collection</title>
+
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet"
+        integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous" />
+
+    <link rel="stylesheet" href="./css/style.css" />
+    <title>NFT</title>
+
+    <!-- jquery  -->
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"
+        integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo=" crossorigin="anonymous"></script>
+    <script src="./js/jscript.js"></script>
+
+    <!-- blockchain-->
+    <script type="text/javascript" src="./js/abi.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/web3@latest/dist/web3.min.js"></script>
+	
+	
+  
+  
+</head>
+
+<body data-page="mynft">
+
+
+
+    <header>
+        <!-- Fixed navbar -->
+
+        <nav class="navbar navbar-expand-lg navbar-dark bg-dark" aria-label="Eighth navbar example">
+            <div class="container">
+                <a class="navbar-brand" href="#">NFT</a>
+                <button class="navbar-toggler" type="button" data-bs-toggle="collapse"
+                    data-bs-target="#navbarsExample07" aria-controls="navbarsExample07" aria-expanded="false"
+                    aria-label="Toggle navigation">
+                    <span class="navbar-toggler-icon"></span>
+                </button>
+
+                <div class="collapse navbar-collapse" id="navbarsExample07">
+                    <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+                        <li class="nav-item">
+                            <a class="nav-link" aria-current="page" href="index.html">민팅하기</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link active" href="mynft.html">My-NFT</a>
+                        </li>
+                        <li class="nav-item">
+                            <a class="nav-link" href="sale.html">판매</a>
+                        </li>
+
+
+                    </ul>
+
+
+
+
+
+
+                    <div class="d-flex">
+                        <button type="button" class="btn btn-warning col-md-6" id="btn_setApprovalForAll">거래상태</button>
+                        &nbsp;&nbsp;
+                        <span class="col-md-7">
+                            <select class="form-select" aria-label="블록체인 네트워크" id="selectNetwork">
+                                <option value="">네트워크를 선택하세요</option>
+                            <option value="POLYGON_AMOY">POLYGON Amoy</option>
+                                <option value="ETH_SEPOLIA">이더리움 Sepolia</option>
+                                <option value="KAIA_KAIROS">카이아 Kairos</option>
+                            </select>
+                        </span>
+                    </div>
+
+
+                </div>
+            </div>
+        </nav>
+    </header>
+
+    <div class="container">
+
+
+        <h1 class="bd-title text-center">My NFT</h1>
+
+
+
+
+        <div class="input-group mb-3">
+            <div class="col-12  py-3">
+                <span class="form-control" id="resultbrowsers"></span>
+            </div>
+
+
+            <div class="input-group-prepend">
+                <span class="input-group-text">계정</span>
+            </div>
+
+            <span class="form-control" id="showAccount"></span>
+
+        </div>
+        <div class="box-body" style="min-height:500px">
+            <table class="table table-hover">
+                <thead>
+                    <tr>
+                        <th>순서</th>
+                        <th>TokenId</th>
+                        <th>창작자</th>
+                        <th>이미지</th>
+                        <th>금액</th>
+                        <th>비고</th>
+                    </tr>
+                </thead>
+                <tbody id="dynamicTbody"></tbody>
+
+            </table>
+
+        </div>
+    </div>
+    <footer class="footer" style="margin-top: 30px">
+        <div class="container">
+            <span class="text-muted">2025년 NFT 마켓플레이스</span>
+        </div>
+    </footer>
+
+
+    <!-- Modal -->
+    <div class="modal fade" id="saleModal" tabindex="-1" aria-labelledby="saleModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="saleModalLabel">Modal title</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="number" class="form-control" id="price" placeholder="판매금액을 입력하세요" value="0"
+                        onkeydown="return onlyNumber(event);" />
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-primary btn_onSaleSubmit" >판매등록하기</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"
+        integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI" crossorigin="anonymous"></script>
+</body>
+
+</html>

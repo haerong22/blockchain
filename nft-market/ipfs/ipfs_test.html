@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="ko">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>IPFS 업로드 테스트</title>
+
+    <!-- Bootstrap CSS -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css" rel="stylesheet"
+        integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB" crossorigin="anonymous" />
+
+    <!-- jquery -->
+    <script src="https://code.jquery.com/jquery-3.7.1.min.js"
+        integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo=" crossorigin="anonymous"></script>
+
+    <style>
+        body {
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 5px;
+        }
+
+        .status.success {
+            background-color: #d4edda;
+            color: #155724;
+        }
+
+        .status.error {
+            background-color: #f8d7da;
+            color: #721c24;
+        }
+
+        .status.info {
+            background-color: #d1ecf1;
+            color: #0c5460;
+        }
+
+        .preview-image {
+            max-width: 100%;
+            margin-top: 20px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+
+        .code-block {
+            background: #f4f4f4;
+            padding: 15px;
+            border-radius: 5px;
+            margin: 10px 0;
+            overflow-x: auto;
+        }
+
+        .result-section {
+            margin-top: 20px;
+            padding: 15px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+    </style>
+
+    <script>
+        $(window).on("load", function () {
+            const IPFS_API_URL = "http://localhost:5001";
+            const IPFS_GATEWAY_URL = "http://localhost:8080/ipfs/";
+            const EXTERNAL_GATEWAY_URL = "https://ipfs.io/ipfs/";
+
+            let uploadedHash = "";
+
+            const setStatus = (selector, message, level) => {
+                $(selector).html(`<div class="status ${level}">${message}</div>`);
+            };
+
+            const formatFileInfo = (file) =>
+                `파일명: ${file.name}<br>크기: ${(file.size / 1024).toFixed(2)} KB<br>타입: ${file.type || "알 수 없음"}`;
+
+            const requestIPFS = (formData, onSuccess, onError) => {
+                $.ajax({
+                    url: `${IPFS_API_URL}/api/v0/add`,
+                    type: "POST",
+                    data: formData,
+                    processData: false,
+                    contentType: false,
+                    success: function (data) {
+                        const result = typeof data === "string" ? JSON.parse(data) : data;
+                        if (!result?.Hash) {
+                            onError("응답에서 CID를 찾지 못했습니다.");
+                            return;
+                        }
+                        onSuccess(result.Hash, result);
+                    },
+                    error: function (jqXHR, textStatus, errorThrown) {
+                        console.error("IPFS 업로드 실패:", textStatus, errorThrown);
+                        onError(`${textStatus}<br>${errorThrown || "IPFS 데몬이 실행 중인지 확인하세요."}`);
+                    }
+                });
+            };
+
+            const checkIPFSStatus = () => {
+                $.ajax({
+                    url: `${IPFS_API_URL}/api/v0/version`,
+                    type: "POST",
+                    success: function (data) {
+                        const result = typeof data === "string" ? JSON.parse(data) : data;
+                        setStatus(
+                            "#ipfs-status",
+                            `<strong>✓ IPFS 연결 성공!</strong><br>Version: ${result.Version}<br>API: ${IPFS_API_URL}`,
+                            "success"
+                        );
+                    },
+                    error: function () {
+                        setStatus(
+                            "#ipfs-status",
+                            "<strong>✗ IPFS 연결 실패</strong><br>IPFS 데몬이 실행 중인지 확인하세요.<br>터미널에서: <code>ipfs daemon</code>",
+                            "error"
+                        );
+                    }
+                });
+            };
+
+            checkIPFSStatus();
+
+            $("#uploadfile").on("change", function (e) {
+                const file = e.target.files[0];
+                const rawPath = e.target.value || "";
+                if (!file) {
+                    setStatus("#file-info", "파일을 선택해주세요.", "error");
+                    $("#preview").empty();
+                    return;
+                }
+
+                const pathLine = rawPath ? `<br>경로: ${rawPath}` : "";
+                setStatus(
+                    "#file-info",
+                    `<strong>선택된 파일:</strong><br>${formatFileInfo(file)}${pathLine}`,
+                    "info"
+                );
+
+                if (file.type.startsWith("image/")) {
+                    const reader = new FileReader();
+                    reader.onload = (evt) => {
+                        $("#preview").html(`<img src="${evt.target.result}" class="preview-image" alt="미리보기">`);
+                    };
+                    reader.readAsDataURL(file);
+                } else {
+                    $("#preview").empty();
+                }
+            });
+
+            $("#btn-upload").on("click", function () {
+                const file = document.getElementById("uploadfile").files[0];
+                if (!file) {
+                    alert("파일을 선택해주세요!");
+                    return;
+                }
+
+                setStatus("#upload-result", "업로드 중...", "info");
+
+                const formData = new FormData();
+                formData.append("file", file);
+
+                requestIPFS(
+                    formData,
+                    function (hash) {
+                        uploadedHash = hash;
+                        const localUrl = `${IPFS_GATEWAY_URL}${hash}`;
+                        const externalUrl = `${EXTERNAL_GATEWAY_URL}${hash}`;
+
+                        const ipfsUri = `ipfs://${hash}`;
+
+                        setStatus(
+                            "#upload-result",
+                            `<strong>✓ 업로드 성공!</strong><br><br>` +
+                                `<strong>IPFS Hash:</strong><br><code>${hash}</code><br><br>` +
+                                `<strong>IPFS URI:</strong><br><code>${ipfsUri}</code><br><br>` +
+                                `<strong>로컬 Gateway URL:</strong><br><a href="${localUrl}" target="_blank">${localUrl}</a><br><br>` +
+                                `<strong>외부 Gateway URL:</strong><br><a href="${externalUrl}" target="_blank">${externalUrl}</a><br><br>` +
+                                `<button class="btn btn-sm btn-primary" data-ipfs-hash="${hash}" id="btn-test-metadata">메타데이터 테스트</button>`,
+                            "success"
+                        );
+
+                        if (file.type.startsWith("image/")) {
+                            $("#uploaded-preview").html(
+                                `<h5 class="mt-4">업로드된 이미지 (로컬 Gateway):</h5>` +
+                                    `<img src="${localUrl}" class="preview-image" alt="업로드된 이미지">` +
+                                    `<div class="mt-2 text-muted" style="font-size: 0.875rem;">` +
+                                        `<div><strong>IPFS URI:</strong> <code>${ipfsUri}</code></div>` +
+                                        `<div><strong>외부 Gateway:</strong> <a href="${externalUrl}" target="_blank">${externalUrl}</a></div>` +
+                                    `</div>`
+                            );
+                        } else {
+                            $("#uploaded-preview").empty();
+                        }
+                    },
+                    function (message) {
+                        setStatus(
+                            "#upload-result",
+                            `<strong>✗ 업로드 실패</strong><br>${message}<br>IPFS 데몬과 CORS 설정을 확인하세요.`,
+                            "error"
+                        );
+                    }
+                );
+            });
+
+            const uploadMetadata = (imageHash) => {
+                const metadata = {
+                    name: "테스트 NFT",
+                    description: "IPFS 업로드 테스트용 NFT입니다.",
+                    image: `${IPFS_GATEWAY_URL}${imageHash}`,
+                    attributes: [
+                        { trait_type: "테스트", value: "성공" },
+                        { trait_type: "카테고리", value: "테스트" }
+                    ]
+                };
+
+                setStatus("#metadata-result", "메타데이터 업로드 중...", "info");
+
+                const metadataBlob = new Blob([JSON.stringify(metadata)], { type: "application/json" });
+                const formData = new FormData();
+                formData.append("file", metadataBlob, "metadata.json");
+
+                requestIPFS(
+                    formData,
+                    function (hash) {
+                        const localUrl = `${IPFS_GATEWAY_URL}${hash}`;
+                        const externalUrl = `${EXTERNAL_GATEWAY_URL}${hash}`;
+                        const ipfsUri = `ipfs://${hash}`;
+                        setStatus(
+                            "#metadata-result",
+                            `<strong>✓ 메타데이터 업로드 성공!</strong><br><br>` +
+                                `<strong>메타데이터 Hash:</strong><br><code>${hash}</code><br><br>` +
+                                `<strong>IPFS URI:</strong><br><code>${ipfsUri}</code><br><br>` +
+                                `<strong>메타데이터 URL:</strong><br><a href="${localUrl}" target="_blank">${localUrl}</a><br><br>` +
+                                `<div class="code-block"><pre>${JSON.stringify(metadata, null, 2)}</pre></div>` +
+                                `<div class="mt-2"><a href="${externalUrl}" target="_blank">외부 Gateway에서 확인하기</a></div>`,
+                            "success"
+                        );
+                    },
+                    function (message) {
+                        setStatus(
+                            "#metadata-result",
+                            `<strong>✗ 메타데이터 업로드 실패</strong><br>${message}`,
+                            "error"
+                        );
+                    }
+                );
+            };
+
+            $(document).on("click", "#btn-test-metadata", function () {
+                const imageHash = $(this).data("ipfs-hash") || uploadedHash;
+                if (!imageHash) {
+                    alert("먼저 이미지를 업로드해주세요.");
+                    return;
+                }
+                uploadMetadata(imageHash);
+            });
+
+            window.testMetadata = uploadMetadata;
+
+            $("#btn-refresh").on("click", function () {
+                checkIPFSStatus();
+            });
+        });
+    </script>
+</head>
+
+<body>
+    <div class="container">
+        <h1 class="text-center mb-4">🧪 IPFS 업로드 테스트</h1>
+
+        <!-- IPFS 상태 -->
+        <div class="result-section">
+            <h4>IPFS 연결 상태</h4>
+            <div id="ipfs-status">
+                <div class="status info">확인 중...</div>
+            </div>
+            <button class="btn btn-sm btn-secondary mt-2" id="btn-refresh">상태 새로고침</button>
+        </div>
+
+        <!-- 사용 설명 -->
+        <div class="alert alert-info mt-4">
+            <strong>📝 사용 방법:</strong>
+            <ol class="mb-0 mt-2">
+                <li>터미널에서 IPFS 데몬 실행: <code>ipfs daemon</code></li>
+                <li>아래에서 이미지 파일을 선택하세요</li>
+                <li>"IPFS에 업로드" 버튼을 클릭하세요</li>
+                <li>업로드 성공 후 "메타데이터 테스트" 버튼으로 NFT 메타데이터도 테스트할 수 있습니다</li>
+            </ol>
+        </div>
+
+        <!-- 파일 선택 -->
+        <div class="mb-4">
+            <label for="uploadfile" class="form-label"><strong>파일 선택</strong></label>
+            <input type="file" class="form-control" id="uploadfile" accept="image/*">
+            <div id="file-info" class="mt-2"></div>
+        </div>
+
+        <!-- 미리보기 -->
+        <div id="preview"></div>
+
+        <!-- 업로드 버튼 -->
+        <div class="d-grid gap-2 mt-3">
+            <button class="btn btn-primary btn-lg" id="btn-upload">🚀 IPFS에 업로드</button>
+        </div>
+
+        <!-- 업로드 결과 -->
+        <div id="upload-result" class="mt-4"></div>
+
+        <!-- 업로드된 이미지 미리보기 -->
+        <div id="uploaded-preview"></div>
+
+        <!-- 메타데이터 결과 -->
+        <div id="metadata-result" class="mt-4"></div>
+
+        <!-- 추가 정보 -->
+        <div class="alert alert-secondary mt-4">
+            <strong>💡 참고:</strong>
+            <ul class="mb-0 mt-2">
+                <li><strong>로컬 Gateway:</strong> http://localhost:8080/ipfs/ (빠르지만 로컬에서만 접근 가능)</li>
+                <li><strong>외부 Gateway:</strong> https://ipfs.io/ipfs/ (느리지만 어디서나 접근 가능)</li>
+                <li><strong>IPFS API:</strong> http://localhost:5001</li>
+                <li>업로드된 파일은 IPFS 네트워크에 영구적으로 저장됩니다</li>
+            </ul>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"
+        integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI"
+        crossorigin="anonymous"></script>
+</body>
+
+</html>
