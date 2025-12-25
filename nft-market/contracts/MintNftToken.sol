@@ -24,6 +24,12 @@ contract MintNftToken is ERC721Enumerable, ReentrancyGuard {
         uint256 price,
         address indexed seller
     );
+    event NFTSold(
+        uint256 indexed tokenId,
+        address indexed from,
+        address indexed to,
+        uint256 price
+    );
 
     struct NftTokenData {
         uint256 nftTokenId;
@@ -118,6 +124,55 @@ contract MintNftToken is ERC721Enumerable, ReentrancyGuard {
     // NFT 가격 조회
     function getNftTokenPrice(uint256 _tokenId) public view returns (uint256) {
         return nftTokenPrices[_tokenId];
+    }
+
+    // NFT 구매 (리엔트런시 방지)
+    function buyNftToken(uint256 _tokenId) public payable nonReentrant {
+        uint256 price = nftTokenPrices[_tokenId];
+        address nftTokenOwner = ownerOf(_tokenId);
+
+        require(price > 0, "NFT token is not for sale");
+        require(msg.value >= price, "Insufficient payment");
+        require(nftTokenOwner != msg.sender, "Cannot buy your own token");
+        require(
+            isApprovedForAll(nftTokenOwner, address(this)) ||
+                getApproved(_tokenId) == address(this),
+            "Contract not approved to transfer token"
+        );
+
+        // 1. 상태 변경 먼저 (CEI 패턴)
+        removeToken(_tokenId);
+        _transfer(nftTokenOwner, msg.sender, _tokenId);
+
+        // 2. 외부 호출 (정확한 가격만 전송)
+        (bool success, ) = payable(nftTokenOwner).call{value: price}("");
+        require(success, "Transfer to seller failed");
+
+        // 3. 초과 금액 환불
+        if (msg.value > price) {
+            (bool refundSuccess, ) = payable(msg.sender).call{
+                value: msg.value - price
+            }("");
+            require(refundSuccess, "Refund to buyer failed");
+        }
+
+        emit NFTSold(_tokenId, nftTokenOwner, msg.sender, price);
+    }
+
+    // 판매 목록에서 토큰 제거 (private)
+    function removeToken(uint256 _tokenId) private {
+        nftTokenPrices[_tokenId] = 0;
+
+        for (uint256 i = 0; i < onSaleNftTokenArray.length; i++) {
+            if (onSaleNftTokenArray[i] == _tokenId) {
+                // 마지막 요소를 현재 위치로 이동
+                onSaleNftTokenArray[i] = onSaleNftTokenArray[
+                    onSaleNftTokenArray.length - 1
+                ];
+                onSaleNftTokenArray.pop();
+                break; // 찾았으면 종료
+            }
+        }
     }
 
     // 현재 토큰 ID 카운터 조회 (디버깅용)
