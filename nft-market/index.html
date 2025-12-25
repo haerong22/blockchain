@@ -1,0 +1,480 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <!-- Required meta tags -->
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <!-- Bootstrap CSS -->
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+      integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB"
+      crossorigin="anonymous"
+    />
+
+    <link rel="stylesheet" href="./css/style.css" />
+    <title>NFT</title>
+
+    <!-- jquery  -->
+    <script
+      src="https://code.jquery.com/jquery-3.7.1.min.js"
+      integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo="
+      crossorigin="anonymous"
+    ></script>
+
+    <!-- blockchain-->
+    <script src="https://cdn.jsdelivr.net/npm/web3@latest/dist/web3.min.js"></script>
+    <script type="text/javascript" src="./js/abi.js"></script>
+    <script src="./js/jscript.js"></script>
+
+    <script>
+      $(document).ready(function () {
+        const STORAGE_KEYS = {
+          network: "blockChainNetwork",
+        };
+
+        //ipfs
+        const publicGateway = "https://ipfs.io/ipfs/";
+        const apiUrl = "http://localhost:5001";
+        const localGateway = "http://localhost:8080/ipfs/";
+
+        $("#btn_uploadfile").on("click", function () {
+          if ($("#uploadfile").val() == "") {
+            alert("대표이미지를 입력해주세요");
+            $("#uploadfile").focus();
+            return;
+          }
+
+          var file = document.getElementById("uploadfile").files[0];
+          if (file) {
+            const datas = new FormData();
+            datas.append("filename", $("#uploadfile")[0].files[0]);
+
+            const formData = new FormData();
+            formData.append("file", file);
+
+            $.ajax({
+              url: apiUrl + "/api/v0/add",
+              type: "POST",
+              data: formData,
+              processData: false,
+              contentType: false,
+              success: function (data) {
+                const result =
+                  typeof data === "string" ? JSON.parse(data) : data;
+                const ipfsHash = result.Hash;
+                if (!ipfsHash) {
+                  setStatusText(
+                    "#upload-status",
+                    "IPFS 해시를 찾을 수 없습니다.",
+                    "error"
+                  );
+                  return;
+                }
+
+                const publicBase = publicGateway.replace(/\/$/, "");
+                const localBase = localGateway.replace(/\/$/, "");
+                const publicUrl = `${publicBase}/${ipfsHash}`;
+                const localUrl = `${localBase}/${ipfsHash}`;
+
+                $("#hash_img_url").val(publicUrl);
+                $("#ipfs_file_url").text(publicUrl).attr("href", publicUrl);
+                $("#ipfs_file_url_local").text(localUrl).attr("href", localUrl);
+
+                const previewImageHtml = file.type.startsWith("image/")
+                  ? `<img src="${publicUrl}" alt="IPFS 업로드 이미지" style="max-width: 100%; border: 1px solid #ddd; border-radius: 4px; margin-top: 12px;">`
+                  : '<div class="text-muted" style="font-size: 0.85rem; margin-top: 12px;">이미지 타입이 아니므로 미리보기를 제공하지 않습니다.</div>';
+                $("#file-preview").html(previewImageHtml);
+
+                const statusMessage =
+                  "<strong>IPFS 업로드 성공</strong><br>" +
+                  `IPFS Hash: ${ipfsHash}<br>` +
+                  `Public Gateway: <a href="${publicUrl}" target="_blank" rel="noopener">${publicUrl}</a><br>` +
+                  `Local Gateway: <a href="${localUrl}" target="_blank" rel="noopener">${localUrl}</a>`;
+
+                setStatusText("#upload-status", statusMessage, "success");
+              },
+              error: function (jqXHR, textStatus, errorThrown) {
+                console.error("IPFS 업로드 실패:", textStatus, errorThrown);
+                alert(
+                  `업로드 오류: ${textStatus}\nIPFS 데몬이 실행 중인지 확인하세요.`
+                );
+                setStatusText(
+                  "#upload-status",
+                  "IPFS 업로드 중 오류가 발생했습니다.",
+                  "error"
+                );
+              },
+            });
+          }
+        });
+
+        $("#bnt_mint").on("click", async function () {
+          if (!mintingEvent || !accounts.length) {
+            alert("지갑 연결 및 컨트랙트 초기화 후 다시 시도하세요.");
+            return;
+          }
+
+          if ($("#name").val() === "") {
+            alert("발행자를 입력해주세요");
+            $("#name").focus();
+            return;
+          }
+
+          if ($("#description").val() === "") {
+            alert("설명을 입력해주세요");
+            $("#description").focus();
+            return;
+          }
+
+          if ($("#hash_img_url").val() === "") {
+            alert("이미지를 업로드해주세요");
+            $("#uploadfile").focus();
+            return;
+          }
+
+          const nftMetadata = {
+            name: $("#name").val(),
+            description: $("#description").val(),
+            image: $("#hash_img_url").val(),
+            attributes: [
+              {
+                trait_type: "category",
+                value: $("#category").val() || "general",
+              },
+            ],
+          };
+
+          console.log(nftMetadata);
+
+          const metadataBlob = new Blob([JSON.stringify(nftMetadata)], {
+            type: "application/json",
+          });
+          const metadataFormData = new FormData();
+          metadataFormData.append("file", metadataBlob, "metadata.json");
+
+          setStatusText(
+            "#upload-status",
+            "메타데이터를 IPFS에 업로드하는 중입니다...",
+            "info"
+          );
+
+          $.ajax({
+            url: apiUrl + "/api/v0/add",
+            type: "POST",
+            data: metadataFormData,
+            processData: false,
+            contentType: false,
+            success: function (data) {
+              const result = typeof data === "string" ? JSON.parse(data) : data;
+              const metadataHash = result.Hash;
+              if (!metadataHash) {
+                setStatusText(
+                  "#upload-status",
+                  "메타데이터 해시를 찾을 수 없습니다.",
+                  "error"
+                );
+                return;
+              }
+              const sanitizedGateway = publicGateway.replace(/\/+$|$/, "/");
+              const metadataUrl = sanitizedGateway + metadataHash;
+              setMint(metadataUrl);
+            },
+            error: function (jqXHR, textStatus, errorThrown) {
+              console.error(
+                "메타데이터 IPFS 업로드 실패:",
+                textStatus,
+                errorThrown
+              );
+              alert(
+                `메타데이터 업로드 오류: ${textStatus}\nIPFS 데몬이 실행 중인지 확인하세요.`
+              );
+              setStatusText(
+                "#upload-status",
+                "메타데이터 업로드 중 오류가 발생했습니다.",
+                "error"
+              );
+            },
+          });
+        });
+
+        async function setMint(hash_meta_url) {
+          if (!window.mintingEvent) {
+            alert(
+              "컨트랙트가 초기화되지 않았습니다. 지갑 연결 후 다시 시도하세요."
+            );
+            setStatusText(
+              "#upload-status",
+              "컨트랙트를 찾을 수 없습니다.",
+              "error"
+            );
+            return;
+          }
+
+          if (!window.web3) {
+            alert(
+              "Web3 인스턴스가 없습니다. 페이지를 새로고침하거나 지갑을 다시 연결하세요."
+            );
+            setStatusText("#upload-status", "Web3 초기화 실패", "error");
+            return;
+          }
+
+          try {
+            const activeAccounts =
+              Array.isArray(window.accounts) && window.accounts.length
+                ? window.accounts
+                : await window.web3.eth.getAccounts();
+
+            if (!activeAccounts || !activeAccounts.length) {
+              alert(
+                "지갑 계정을 찾을 수 없습니다. MetaMask 로그인을 확인하세요."
+              );
+              setStatusText("#upload-status", "지갑 계정 없음", "error");
+              return;
+            }
+
+            // 폴리곤 오류 대응
+            const networkKey = localStorage.getItem(STORAGE_KEYS.network);
+            const primaryAccount = activeAccounts[0];
+            let sendOptions = { from: primaryAccount };
+
+            if (networkKey === "POLYGON_AMOY") {
+              // Polygon Amoy 전송 파라미터를 명시적으로 설정한다.
+              try {
+                const nonce = await window.web3.eth.getTransactionCount(
+                  primaryAccount,
+                  "pending"
+                );
+                sendOptions = {
+                  ...sendOptions,
+                  gasPrice: "50000000000", // 50 Gwei 고정
+                  gas: "500000", // 넉넉한 가스 한도
+                  nonce,
+                };
+                console.log("Polygon Amoy 민팅 시도:", sendOptions);
+              } catch (gasError) {
+                console.warn("가스 설정 실패, 기본값 사용:", gasError);
+                sendOptions = {
+                  ...sendOptions,
+                  gasPrice: "50000000000",
+                  gas: "500000",
+                };
+              }
+            }
+
+            setStatusText(
+              "#upload-status",
+              "민팅 트랜잭션을 전송 중입니다...",
+              "info"
+            );
+
+            const receiptObj = await window.mintingEvent.methods
+              .mintNFT(hash_meta_url)
+              .send(sendOptions);
+
+            console.log("mint receipt:", receiptObj);
+            $("#resultbox").text(
+              "처리결과 \n" + JSON.stringify(receiptObj, (key, value) =>
+                typeof value === 'bigint' ? value.toString() : value
+              , 2)
+            );
+            setStatusText(
+              "#upload-status",
+              "민팅이 완료되었습니다!",
+              "success"
+            );
+          } catch (error) {
+            console.error("민팅 오류:", error);
+            const rpcMessage =
+              (error && error.data && error.data.message) ||
+              (error && error.error && error.error.message) ||
+              (error && error.message);
+            let message = "민팅 중 오류가 발생했습니다.";
+            if (rpcMessage) {
+              message += "\n" + rpcMessage;
+            }
+            $("#resultbox").text("처리결과 \n" + message);
+            setStatusText("#upload-status", message, "error");
+          }
+        }
+      });
+    </script>
+  </head>
+
+  <body data-page="index">
+    <input type="hidden" id="hash_img_url" name="hash_img_url" />
+
+    <nav
+      class="navbar navbar-expand-lg navbar-dark bg-dark"
+      aria-label="Eighth navbar example"
+    >
+      <div class="container">
+        <a class="navbar-brand" href="#">NFT</a>
+        <button
+          class="navbar-toggler"
+          type="button"
+          data-bs-toggle="collapse"
+          data-bs-target="#navbarsExample07"
+          aria-controls="navbarsExample07"
+          aria-expanded="false"
+          aria-label="Toggle navigation"
+        >
+          <span class="navbar-toggler-icon"></span>
+        </button>
+
+        <div class="collapse navbar-collapse" id="navbarsExample07">
+          <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+            <li class="nav-item">
+              <a class="nav-link active" aria-current="page" href="index.html"
+                >민팅하기</a
+              >
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="mynft.html">My-NFT</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="sale.html">판매</a>
+            </li>
+          </ul>
+
+          <div class="d-flex">
+            <button
+              type="button"
+              class="btn btn-warning col-md-6"
+              id="btn_setApprovalForAll"
+            >
+              거래상태
+            </button>
+            &nbsp;&nbsp;
+            <span class="col-md-7">
+              <select
+                class="form-select"
+                aria-label="블록체인 네트워크"
+                id="selectNetwork"
+              >
+                <option value="">네트워크를 선택하세요</option>
+                <option value="POLYGON_AMOY">POLYGON Amoy</option>
+                <option value="ETH_SEPOLIA">이더리움 Sepolia</option>
+                <option value="KAIA_KAIROS">카이아 Kairos</option>
+              </select>
+            </span>
+          </div>
+        </div>
+      </div>
+    </nav>
+
+    <div class="container">
+      <h1 class="bd-title text-center">IPFS 파일업로드 & NFT발행</h1>
+
+      <div class="box-body">
+        <div class="col-12 py-3">
+          <span class="form-control" id="resultbrowsers"></span>
+        </div>
+
+        <div class="input-group mb-3">
+          <div class="input-group-prepend">
+            <span class="input-group-text">계정</span>
+          </div>
+
+          <span class="form-control" id="showAccount"></span>
+        </div>
+
+        <div class="col-12">
+          <label for="name" class="form-label">발행자</label>
+          <input
+            type="text"
+            class="form-control"
+            id="name"
+            placeholder="발행자를 입력하세요"
+            value="발행자"
+          />
+        </div>
+
+        <div class="col-12 py-3">
+          <label for="uploadfile" class="form-label">대표이미지</label>
+          <div class="input-group input-group-sm">
+            <input
+              type="file"
+              class="form-control"
+              name="uploadfile"
+              id="uploadfile"
+            />
+          </div>
+          <div
+            id="file-info"
+            class="mt-2 text-muted"
+            style="font-size: 0.875rem"
+          ></div>
+          <div id="file-preview" class="mt-3"></div>
+          <div class="mt-3">
+            <button
+              type="button"
+              class="btn btn-secondary btn-flat w-100"
+              id="btn_uploadfile"
+            >
+              IPFS 파일 업로드
+            </button>
+          </div>
+          <div
+            id="upload-status"
+            class="mt-3 text-muted"
+            style="font-size: 0.9rem"
+          ></div>
+          <div class="mt-2 small">
+            <a id="ipfs_file_url" class="d-block" target="_blank"></a>
+            <a id="ipfs_file_url_local" class="d-block" target="_blank"></a>
+          </div>
+        </div>
+
+        <div class="col-12 py-3">
+          <div class="form-group">
+            <label for="category">카테고리</label>
+            <select
+              class="selectpicker form-control"
+              name="category"
+              id="category"
+            >
+              <option value="">선택하세요</option>
+              <option value="기본">기본</option>
+              <option value="중요">중요</option>
+              <option value="기타">기타</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="col-12">
+          <label for="description" class="form-label">description</label>
+          <textarea
+            class="form-control"
+            rows="3"
+            id="description"
+            placeholder="description을 입력하세요"
+          ></textarea>
+        </div>
+
+        <div class="col-12 divResponse">
+          <pre class="response"><span id="resultbox">Response API:</span></pre>
+        </div>
+
+        <div>
+          <button type="button" class="btn btn-primary" id="bnt_mint">
+            민팅하기
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <footer class="footer" style="margin-top: 30px">
+      <div class="container">
+        <span class="text-muted">2025년 NFT 마켓플레이스</span>
+      </div>
+    </footer>
+
+    <script
+      src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"
+      integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI"
+      crossorigin="anonymous"
+    ></script>
+  </body>
+</html>

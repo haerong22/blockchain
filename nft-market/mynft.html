@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="ko">
+  <head>
+    <!-- Required meta tags -->
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>NFT - My Collection</title>
+
+    <!-- Bootstrap CSS -->
+    <link
+      href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/css/bootstrap.min.css"
+      rel="stylesheet"
+      integrity="sha384-sRIl4kxILFvY47J16cr9ZwB07vP4J8+LH7qKQnuqkuIAvNWLzeN8tE5YBujZqJLB"
+      crossorigin="anonymous"
+    />
+
+    <link rel="stylesheet" href="./css/style.css" />
+    <title>NFT</title>
+
+    <!-- jquery  -->
+    <script
+      src="https://code.jquery.com/jquery-3.7.1.min.js"
+      integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo="
+      crossorigin="anonymous"
+    ></script>
+
+    <!-- blockchain-->
+    <script src="https://cdn.jsdelivr.net/npm/web3@latest/dist/web3.min.js"></script>
+    <script type="text/javascript" src="./js/abi.js"></script>
+    <script src="./js/jscript.js"></script>
+
+    <script>
+      $(window).on("load", async function () {
+        // 1) 지갑 초기화가 끝날 때까지 기다리는 유틸리티
+        async function waitForContract(timeoutMs) {
+          const start = Date.now();
+          while (!window.mintingEvent) {
+            if (Date.now() - start > timeoutMs) {
+              throw new Error("mintingEvent 초기화 타임아웃");
+            }
+            await new Promise((resolve) => setTimeout(resolve, 200));
+          }
+          return window.mintingEvent;
+        }
+
+        try {
+          // 2) initWeb3Context()가 만들어 줄 때까지 기다린다
+          await waitForContract(5000);
+        } catch (err) {
+          alert(
+            "컨트랙트가 초기화되지 않았습니다. 지갑 연결 후 다시 시도하세요."
+          );
+          console.error(err);
+          return;
+        }
+
+        // 3) 아래부터 기존 mynft 로직 실행
+        const accounts =
+          Array.isArray(window.accounts) && window.accounts.length
+            ? window.accounts
+            : await window.web3.eth.getAccounts();
+        const activeAccount = accounts[0];
+
+        const contractAddress = window.mintingEvent.options.address;
+
+        // 승인 상태 조회
+        let approvalState = await window.mintingEvent.methods
+          .isApprovedForAll(activeAccount, contractAddress)
+          .call();
+        $("#btn_setApprovalForAll").text(
+          approvalState ? "거래상태 : 거래가능" : "거래상태 : 거래중지"
+        );
+
+        const ownedTokens = await window.mintingEvent.methods
+          .getNftTokens(activeAccount)
+          .call();
+
+        if (!Array.isArray(ownedTokens) || ownedTokens.length === 0) {
+          const emptyRowHtml =
+            '<tr><td colspan="6" style="text-align:center;">자료없음</td></tr>';
+          $("#dynamicTbody").append(emptyRowHtml);
+        } else {
+          ownedTokens.forEach(function (token, index) {
+            const nftTokenId = token.nftTokenId;
+            const nftTokenURI = token.nftTokenURI;
+            const price = token.price;
+            const metadata = ipfsInfo(nftTokenURI);
+            const tokenName = metadata.name || `Token #${nftTokenId}`;
+            const imageSrc = metadata.image;
+
+            let actionButtons = `<a href="./mynft_detail.html?tokenId=${nftTokenId}" class="btn btn-secondary btn-flat">상세보기</a>`;
+            if (String(price) === "0") {
+              actionButtons += `<button type="button" class="btn btn-primary btn_onSale" data-bs-toggle="modal" data-bs-target="#saleModal" data-val="${nftTokenId}">판매하기</button>`;
+            }
+            actionButtons += `<button type="button" class="btn btn-danger btn_burn" data-val="${nftTokenId}">삭제하기</button>`;
+
+            const rowHtml = `
+				<tr id="tr_${nftTokenId}">
+					<td>${index + 1}</td>
+					<td>${nftTokenId}</td>
+					<td>${tokenName}</td>
+					<td><img src="${imageSrc}" alt="${tokenName}" width="100"/></td>
+					<td>${price}</td>
+					<td>${actionButtons}</td>
+				</tr>`;
+
+            $("#dynamicTbody").append(rowHtml);
+          });
+        }
+
+        function normalizeIpfsUrl(url) {
+          if (!url) {
+            return "";
+          }
+
+          let normalized = url.trim();
+          if (normalized.startsWith("ipfs://")) {
+            normalized = normalized.replace(
+              /^ipfs:\/\//,
+              "http://localhost:8080/ipfs/"
+            );
+          }
+          if (!/^https?:\/\//i.test(normalized)) {
+            normalized =
+              "http://localhost:8080/ipfs/" + normalized.replace(/^\/+/, "");
+          }
+          return normalized.replace(/([^:]\/)\/+/, "$1");
+        }
+
+        function ipfsInfo(_nftTokenURI) {
+          const fallbackImage =
+            'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="200" height="200" viewBox="0 0 200 200"%3E%3Crect width="200" height="200" fill="%23f0f0f0"/%3E%3Ctext x="100" y="105" font-size="16" text-anchor="middle" fill="%23999"%3ENo Image%3C/text%3E%3C/svg%3E';
+          const metadata = {
+            name: "메타데이터 로드 실패",
+            image: "",
+          };
+
+          if (!_nftTokenURI) {
+            metadata.image = fallbackImage;
+            return metadata;
+          }
+
+          const normalizedUri = normalizeIpfsUrl(_nftTokenURI);
+          const requestUrls = Array.from(
+            new Set([
+              normalizedUri,
+              normalizedUri.replace(
+                "http://localhost:8080",
+                "https://cloudflare-ipfs.com"
+              ),
+              normalizedUri.replace(
+                "http://localhost:8080",
+                "https://gateway.pinata.cloud"
+              ),
+              normalizedUri.replace(
+                "http://localhost:8080",
+                "https://nftstorage.link"
+              ),
+              normalizedUri.replace(
+                "http://localhost:8080",
+                "https://dweb.link"
+              ),
+            ])
+          ).filter(Boolean);
+          //http://localhost:8080/ipfs/QmbXkVvtkQ63uhwnsJRR7cSCTz1sCNSgXZhayaLtLHCgqF
+
+          for (let idx = 0; idx < requestUrls.length; idx++) {
+            $.ajax({
+              url: requestUrls[idx],
+              type: "GET",
+              dataType: "json",
+              async: false,
+              success: function (data) {
+                if (data) {
+                  metadata.name = data.name || metadata.name;
+                  metadata.image =
+                    normalizeIpfsUrl(data.image) || metadata.image;
+                }
+              },
+              error: function (xhr) {
+                console.warn(
+                  "메타데이터 요청 실패:",
+                  requestUrls[idx],
+                  xhr.status
+                );
+              },
+            });
+
+            if (metadata.image) {
+              break;
+            }
+          }
+
+          if (!metadata.image) {
+            metadata.image = fallbackImage;
+          }
+
+          return metadata;
+        }
+
+        function extractRpcErrorMessage(error) {
+          if (!error) {
+            return "";
+          }
+          if (error.data && error.data.message) {
+            return error.data.message;
+          }
+          if (error.error && error.error.message) {
+            return error.error.message;
+          }
+          if (error.message) {
+            return error.message;
+          }
+          return "";
+        }
+
+        function buildSendOptions(account, overrides) {
+          const storageKey =
+            typeof STORAGE_KEYS !== "undefined" && STORAGE_KEYS.network
+              ? STORAGE_KEYS.network
+              : "blockChainNetwork";
+          const networkKey = localStorage.getItem(storageKey) || "";
+          const base = Object.assign({ from: account }, overrides || {});
+          if (networkKey === "POLYGON_AMOY") {
+            if (!base.gasPrice) {
+              base.gasPrice = "50000000000";
+            }
+            if (!base.gas) {
+              base.gas = "500000";
+            }
+          }
+          return base;
+        }
+
+        $(document).on("click", ".btn_onSale", function () {
+          const tokenId = $(this).data("val"); // 목록 버튼에 data-val="..."가 이미 있음
+          $("#saleModal").data("token-id", tokenId);
+          $(".modal-title").text("판매등록하기");
+          $("#saleModal").modal("show");
+        });
+
+        //판매하기
+        $(".btn_onSaleSubmit").click(async function () {
+          const tokenId = $("#saleModal").data("token-id"); // 저장해둔 값 읽기
+          if (!tokenId) {
+            alert("판매할 토큰을 찾을 수 없습니다.");
+            return;
+          }
+
+          var price = $("#price").val();
+
+          //console.log(tokenId, price, approvalState);
+
+          var ownerAddress = await window.mintingEvent.methods
+            .ownerOf(tokenId)
+            .call();
+          console.log(ownerAddress.toLowerCase(), activeAccount);
+
+          if (ownerAddress.toLowerCase() !== activeAccount.toLowerCase()) {
+            alert("제품 소유자만 판매등록할 수 있습니다.");
+            return false;
+          }
+
+          if (!approvalState) {
+            alert("판매승인 상태를 변경하세요");
+            return false;
+          }
+
+          try {
+            const sendOptions = buildSendOptions(activeAccount, {
+              gas: 3000000,
+            });
+            const receiptObj = await window.mintingEvent.methods
+              .setSaleNftToken(tokenId, price)
+              .send(sendOptions);
+            console.log(receiptObj);
+            location.reload();
+          } catch (txError) {
+            const message =
+              extractRpcErrorMessage(txError) ||
+              "판매 등록 중 오류가 발생했습니다.";
+            console.error("setSaleNftToken 실패", txError);
+            alert(message);
+          }
+        });
+
+        $(".btn_burn").click(async function () {
+          if (
+            confirm(
+              "삭제하시면 복구할수 없습니다. \n 정말로 삭제하시겠습니까??"
+            )
+          ) {
+            var tokenId = $(this).attr("data-val");
+            try {
+              const sendOptions = buildSendOptions(activeAccount);
+              const receiptObj = await window.mintingEvent.methods
+                .burn(tokenId)
+                .send(sendOptions);
+              console.log(receiptObj);
+              $("#tr_" + tokenId).remove();
+            } catch (txError) {
+              const message =
+                extractRpcErrorMessage(txError) ||
+                "삭제 중 오류가 발생했습니다.";
+              console.error("burn 실패", txError);
+              alert(message);
+            }
+
+            return false;
+          }
+        });
+
+        //상태변경하기
+        $("#btn_setApprovalForAll").click(async function () {
+          try {
+            const sendOptions = buildSendOptions(activeAccount);
+            const receiptObj = await window.mintingEvent.methods
+              .setApprovalForAll(contractAddress, true)
+              .send(sendOptions);
+            console.log(receiptObj);
+            approvalState = true;
+            location.reload();
+          } catch (txError) {
+            const message =
+              extractRpcErrorMessage(txError) ||
+              "판매 승인 변경 중 오류가 발생했습니다.";
+            console.error("setApprovalForAll 실패", txError);
+            alert(message);
+          }
+        });
+      });
+    </script>
+  </head>
+
+  <body data-page="mynft">
+    <header>
+      <!-- Fixed navbar -->
+
+      <nav
+        class="navbar navbar-expand-lg navbar-dark bg-dark"
+        aria-label="Eighth navbar example"
+      >
+        <div class="container">
+          <a class="navbar-brand" href="#">NFT</a>
+          <button
+            class="navbar-toggler"
+            type="button"
+            data-bs-toggle="collapse"
+            data-bs-target="#navbarsExample07"
+            aria-controls="navbarsExample07"
+            aria-expanded="false"
+            aria-label="Toggle navigation"
+          >
+            <span class="navbar-toggler-icon"></span>
+          </button>
+
+          <div class="collapse navbar-collapse" id="navbarsExample07">
+            <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+              <li class="nav-item">
+                <a class="nav-link" aria-current="page" href="index.html"
+                  >민팅하기</a
+                >
+              </li>
+              <li class="nav-item">
+                <a class="nav-link active" href="mynft.html">My-NFT</a>
+              </li>
+              <li class="nav-item">
+                <a class="nav-link" href="sale.html">판매</a>
+              </li>
+            </ul>
+
+            <div class="d-flex">
+              <button
+                type="button"
+                class="btn btn-warning col-md-6"
+                id="btn_setApprovalForAll"
+              >
+                거래상태
+              </button>
+              &nbsp;&nbsp;
+              <span class="col-md-7">
+                <select
+                  class="form-select"
+                  aria-label="블록체인 네트워크"
+                  id="selectNetwork"
+                >
+                  <option value="">네트워크를 선택하세요</option>
+                  <option value="POLYGON_AMOY">POLYGON Amoy</option>
+                  <option value="ETH_SEPOLIA">이더리움 Sepolia</option>
+                  <option value="KAIA_KAIROS">카이아 Kairos</option>
+                </select>
+              </span>
+            </div>
+          </div>
+        </div>
+      </nav>
+    </header>
+
+    <div class="container">
+      <h1 class="bd-title text-center">My NFT</h1>
+
+      <div class="input-group mb-3">
+        <div class="col-12 py-3">
+          <span class="form-control" id="resultbrowsers"></span>
+        </div>
+
+        <div class="input-group-prepend">
+          <span class="input-group-text">계정</span>
+        </div>
+
+        <span class="form-control" id="showAccount"></span>
+      </div>
+      <div class="box-body" style="min-height: 500px">
+        <table class="table table-hover">
+          <thead>
+            <tr>
+              <th>순서</th>
+              <th>TokenId</th>
+              <th>창작자</th>
+              <th>이미지</th>
+              <th>금액</th>
+              <th>비고</th>
+            </tr>
+          </thead>
+          <tbody id="dynamicTbody"></tbody>
+        </table>
+      </div>
+    </div>
+    <footer class="footer" style="margin-top: 30px">
+      <div class="container">
+        <span class="text-muted">2025년 NFT 마켓플레이스</span>
+      </div>
+    </footer>
+
+    <!-- Modal -->
+    <div
+      class="modal fade"
+      id="saleModal"
+      tabindex="-1"
+      aria-labelledby="saleModalLabel"
+      aria-hidden="true"
+    >
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="saleModalLabel">Modal title</h5>
+            <button
+              type="button"
+              class="btn-close"
+              data-bs-dismiss="modal"
+              aria-label="Close"
+            ></button>
+          </div>
+          <div class="modal-body">
+            <input
+              type="number"
+              class="form-control"
+              id="price"
+              placeholder="판매금액을 입력하세요"
+              value="0"
+              onkeydown="return onlyNumber(event);"
+            />
+          </div>
+          <div class="modal-footer">
+            <button
+              type="button"
+              class="btn btn-secondary"
+              data-bs-dismiss="modal"
+            >
+              Close
+            </button>
+            <button type="button" class="btn btn-primary btn_onSaleSubmit">
+              판매등록하기
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script
+      src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.8/dist/js/bootstrap.bundle.min.js"
+      integrity="sha384-FKyoEForCGlyvwx9Hj09JcYn3nv7wiPVlz7YYwJrWVcXK/BmnVDxM+D2scQbITxI"
+      crossorigin="anonymous"
+    ></script>
+  </body>
+</html>
