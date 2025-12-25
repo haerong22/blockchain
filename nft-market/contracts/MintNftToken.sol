@@ -24,6 +24,7 @@ contract MintNftToken is ERC721Enumerable, ReentrancyGuard {
         uint256 price,
         address indexed seller
     );
+    event NFTBurned(uint256 indexed tokenId, address indexed owner);
     event NFTSold(
         uint256 indexed tokenId,
         address indexed from,
@@ -157,6 +158,27 @@ contract MintNftToken is ERC721Enumerable, ReentrancyGuard {
         }
 
         emit NFTSold(_tokenId, nftTokenOwner, msg.sender, price);
+    }
+
+    // NFT 소각
+    function burn(uint256 _tokenId) public {
+        address tokenOwner = ownerOf(_tokenId);
+        require(
+            tokenOwner == msg.sender,
+            "Caller is not the owner of the token"
+        );
+
+        // 판매 중이면 판매 목록에서 제거
+        if (nftTokenPrices[_tokenId] > 0) {
+            removeToken(_tokenId);
+        }
+
+        // tokenURI 데이터 삭제
+        delete tokenURIs[_tokenId];
+
+        _burn(_tokenId);
+
+        emit NFTBurned(_tokenId, msg.sender);
     }
 
     // 판매 목록에서 토큰 제거 (private)
